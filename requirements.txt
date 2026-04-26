@@ -1,0 +1,10 @@
+streamlit
+plotly
+fastapi
+uvicorn
+google-cloud-bigtable
+pandas
+python-dotenv
+requests
+scipy
+statsmodels
