@@ -1,0 +1,12 @@
+version: "3.8"
+
+services:
+  fullstack:
+    build: .
+    container_name: price-intelligence-app
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./backend:/app/backend
+      - ./data:/app/data
