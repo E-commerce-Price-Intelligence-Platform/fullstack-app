@@ -140,3 +140,38 @@ if ci_data:
     fig5.update_layout(**DARK, title="Intervalles de confiance à 95%",
                        xaxis_title="Prix (€)", yaxis_title="")
     st.plotly_chart(fig5, use_container_width=True)
+    st.markdown("### 5. Régression linéaire — price ~ brand + platform")
+
+import statsmodels.api as sm
+
+reg_df = df.copy()
+reg_df['brand_code'] = pd.Categorical(reg_df['brand']).codes
+reg_df['platform_code'] = pd.Categorical(reg_df['platform']).codes
+reg_df = reg_df[['price','brand_code','platform_code']].dropna()
+
+if len(reg_df) > 10:
+    X = sm.add_constant(reg_df[['brand_code','platform_code']])
+    y = reg_df['price']
+    model = sm.OLS(y, X).fit()
+
+    r1, r2, r3 = st.columns(3)
+    r1.metric("R²",          f"{model.rsquared:.4f}")
+    r2.metric("F-statistic", f"{model.fvalue:.4f}")
+    r3.metric("P-value",     f"{model.f_pvalue:.4f}")
+
+    if model.rsquared > 0.5:
+        st.markdown("<div style='background:#1a2a1a;border:1px solid #2a4a2a;border-radius:8px;padding:12px 16px;color:#4ade80;font-size:13px'>Modèle significatif — la marque et la plateforme expliquent bien les variations de prix.</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div style='background:#1a1a2a;border:1px solid #2a2a4a;border-radius:8px;padding:12px 16px;color:#a78bfa;font-size:13px'>Modèle partiel — d'autres facteurs influencent les prix.</div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("<p style='color:#60a5fa;font-size:11px;text-transform:uppercase;letter-spacing:.5px'>Résumé du modèle</p>", unsafe_allow_html=True)
+        st.text(model.summary().as_text())
+    with col2:
+        fig = px.scatter(reg_df, x='brand_code', y='price',
+                        trendline='ols',
+                        color_discrete_sequence=['#60a5fa'],
+                        title="Price vs Brand")
+        fig.update_layout(**DARK)
+        st.plotly_chart(fig, use_container_width=True)

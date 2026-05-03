@@ -117,3 +117,6 @@ with cs2:
 
 st.markdown("#### Données brutes")
 st.dataframe(f[['name','brand','model','price','currency','platform','timestamp']].sort_values('price',ascending=False), use_container_width=True)
+import time
+time.sleep(30)
+st.rerun()
