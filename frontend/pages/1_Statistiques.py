@@ -175,3 +175,5 @@ if len(reg_df) > 10:
                         title="Price vs Brand")
         fig.update_layout(**DARK)
         st.plotly_chart(fig, use_container_width=True)
+
+        
