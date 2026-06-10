@@ -4,176 +4,340 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np 
 from scipy import stats
-import sys, os
-st.write("TEST - page chargée")
-st.write(os.path.dirname(os.path.abspath(__file__)))
+import statsmodels.api as sm
+import sys
+import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'backend'))
+# Inject path to backend
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 from bigtable_client import get_latest_prices
 
-st.set_page_config(page_title="Statistiques", layout="wide")
-st.markdown("""
-<style>
-[data-testid="stAppViewContainer"]{background:#0f1117}
-[data-testid="stSidebar"]{background:#161b2e;border-right:1px solid #1e2a40}
-[data-testid="metric-container"]{background:#161b2e;border:1px solid #1e2a40;border-radius:10px;padding:14px}
-[data-testid="stMetricLabel"]{color:#6b7280!important;font-size:11px!important;text-transform:uppercase;letter-spacing:.5px}
-[data-testid="stMetricValue"]{color:#fff!important;font-size:22px!important}
-h1,h2,h3,h4{color:#fff!important;font-weight:500!important}
-p{color:#9ca3af}.block-container{padding-top:2rem}
-</style>
-""", unsafe_allow_html=True)
-
-COLORS = ['#60a5fa','#4ade80','#a78bfa','#f87171','#fbbf24']
-DARK = dict(
-    paper_bgcolor='#161b2e', plot_bgcolor='#161b2e',
-    font=dict(color='#9ca3af',size=12),
-    title_font=dict(color='#fff',size=14),
-    xaxis=dict(gridcolor='#1e2a40',color='#6b7280'),
-    yaxis=dict(gridcolor='#1e2a40',color='#6b7280'),
-    legend=dict(bgcolor='#161b2e',bordercolor='#1e2a40'),
-    margin=dict(l=40,r=20,t=40,b=40)
+# Import design tokens and helper functions
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from theme import (
+    inject_custom_css, apply_plotly_theme, standardize_currency,
+    render_kpi, render_alert, ICONS, COLOR_CYAN, COLOR_PURPLE,
+    COLOR_AMBER, COLOR_GREEN, COLOR_RED
 )
 
-st.markdown("<h1 style='font-size:26px;margin-bottom:2px'>Analyse Statistique</h1>", unsafe_allow_html=True)
-st.markdown("<p style='color:#6b7280;font-size:13px;margin-bottom:20px'>Tests inférentiels · Intervalles de confiance · ANOVA</p>", unsafe_allow_html=True)
+# Page configuration
+st.set_page_config(page_title="Statistiques", layout="wide")
 
-df = get_latest_prices()
-if df.empty:
-    st.error("Aucune donnée.")
+# Inject CSS styles
+inject_custom_css()
+
+# Fetch raw data
+df_raw = get_latest_prices()
+if df_raw.empty:
+    st.error("Aucune donnée disponible pour l'analyse.")
     st.stop()
 
-st.markdown("### 1. Statistiques descriptives")
-c1,c2,c3,c4 = st.columns(4)
-c1.metric("Moyenne globale", f"€{df['price'].mean():,.0f}")
-c2.metric("Médiane",         f"€{df['price'].median():,.0f}")
-c3.metric("Écart-type",      f"€{df['price'].std():,.0f}")
-c4.metric("Variance",        f"€{df['price'].var():,.0f}")
+# ── Sidebar Filter & Currency ──────────────────────────────────
+st.sidebar.markdown("""
+<div style='padding: 10px 0; border-bottom: 1px solid rgba(0, 0, 0, 0.08); margin-bottom: 20px;'>
+    <h2 style='color:#0B0F19; font-size:18px; margin:0; font-weight:700; letter-spacing:1px;'>STATISTIQUES</h2>
+    <p style='color:#64748B; font-size:11px; margin:4px 0 0 0;'>Analysis Control Center</p>
+</div>
+""", unsafe_allow_html=True)
+
+currency_choice = st.sidebar.selectbox(
+    "Devise d'affichage",
+    ["Moroccan Dirham (MAD)", "Euro (EUR)"]
+)
+target_currency = "EUR" if "EUR" in currency_choice else "MAD"
+currency_symbol = "€" if target_currency == "EUR" else "DH"
+
+# Standardize currency
+df = standardize_currency(df_raw, target_currency)
+
+# ── Header ──────────────────────────────────────────────────
+st.markdown(f"""
+<div style='background: linear-gradient(135deg, #FFFFFF 0%, #F3F4F6 100%); border: 1.5px solid rgba(0, 0, 0, 0.08); border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.05);'>
+    <h1 style='font-size:28px; margin:0; font-weight:700; color:#0B0F19; background: linear-gradient(90deg, #0B0F19, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent;'>ANALYSE STATISTIQUE INFERENTIELLE</h1>
+    <p style='color:#64748B; font-size:13px; margin:8px 0 0 0; line-height: 1.5;'>
+        Tests d'hypothèses · Intervalles de confiance · ANOVA · Analyse de régression linéaire multi-factorielle.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+# ── 1. Descriptive Stats ────────────────────────────────────
+st.markdown("### 1. Statistiques Descriptives Globales")
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    render_kpi("Moyenne Globale", f"{df['price'].mean():,.0f} {currency_symbol}", "price", "Indicateur central")
+with c2:
+    render_kpi("Médiane", f"{df['price'].median():,.0f} {currency_symbol}", "platforms", "50% de la distribution")
+with c3:
+    render_kpi("Écart-type", f"{df['price'].std():,.0f} {currency_symbol}", "max_price", "Dispersion des prix")
+with c4:
+    render_kpi("Variance", f"{df['price'].var():,.0f} {currency_symbol}²", "min_price", "Variabilité globale")
 
 st.markdown("<div style='margin:16px 0'></div>", unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
-    fig = px.histogram(df, x='price', color='platform',
-                       nbins=40, color_discrete_sequence=COLORS,
-                       title="Distribution des prix")
-    fig.update_layout(**DARK)
-    st.plotly_chart(fig, use_container_width=True)
+    fig = px.histogram(
+        df,
+        x='price',
+        color='platform',
+        nbins=40,
+        color_discrete_sequence=[COLOR_CYAN, COLOR_PURPLE, COLOR_AMBER, COLOR_GREEN, COLOR_RED],
+        title="Distribution des Prix"
+    )
+    apply_plotly_theme(fig)
+    fig.update_layout(
+        xaxis_title=f"Prix ({currency_symbol})",
+        yaxis_title="Nombre de produits",
+        legend_title="Plateforme"
+    )
+    st.plotly_chart(fig, use_container_width=True, theme=None)
 
 with col2:
-    fig2 = px.violin(df, x='platform', y='price', color='platform',
-                     color_discrete_sequence=COLORS, box=True,
-                     title="Violin plot par plateforme")
-    fig2.update_layout(**DARK, showlegend=False)
-    st.plotly_chart(fig2, use_container_width=True)
+    fig2 = px.violin(
+        df,
+        x='platform',
+        y='price',
+        color='platform',
+        color_discrete_sequence=[COLOR_CYAN, COLOR_PURPLE, COLOR_AMBER, COLOR_GREEN, COLOR_RED],
+        box=True,
+        title="Violin Plot par Plateforme"
+    )
+    apply_plotly_theme(fig2)
+    fig2.update_layout(
+        showlegend=False,
+        yaxis_title=f"Prix ({currency_symbol})",
+        xaxis_title="Plateforme"
+    )
+    st.plotly_chart(fig2, use_container_width=True, theme=None)
 
-st.markdown("### 2. T-test — Comparaison de deux plateformes")
+st.markdown("<div style='margin:20px 0'></div>", unsafe_allow_html=True)
+
+# ── 2. T-Test ───────────────────────────────────────────────
+st.markdown("### 2. Test de Student (T-test) — Comparaison Bivariée")
 platforms = sorted(df['platform'].dropna().unique().tolist())
+
 tc1, tc2 = st.columns(2)
-p1 = tc1.selectbox("Plateforme A", platforms, index=0)
-p2 = tc2.selectbox("Plateforme B", platforms, index=min(1,len(platforms)-1))
+with tc1:
+    p1 = st.selectbox("Plateforme A (Référence)", platforms, index=0)
+with tc2:
+    p2 = st.selectbox("Plateforme B (Comparaison)", platforms, index=min(1, len(platforms)-1))
 
-g1 = df[df['platform']==p1]['price'].dropna()
-g2 = df[df['platform']==p2]['price'].dropna()
+g1 = df[df['platform'] == p1]['price'].dropna()
+g2 = df[df['platform'] == p2]['price'].dropna()
 
-if len(g1) > 1 and len(g2) > 1 and p1 != p2:
+if p1 == p2:
+    render_alert("Veuillez sélectionner deux plateformes différentes pour exécuter le test de Student.", type="warning", icon="alert")
+elif len(g1) <= 1 or len(g2) <= 1:
+    render_alert("Données insuffisantes pour exécuter le T-test sur l'une des plateformes sélectionnées.", type="warning", icon="alert")
+else:
     t_stat, p_val = stats.ttest_ind(g1, g2)
     ci1 = stats.t.interval(0.95, len(g1)-1, loc=g1.mean(), scale=stats.sem(g1))
     ci2 = stats.t.interval(0.95, len(g2)-1, loc=g2.mean(), scale=stats.sem(g2))
 
-    r1,r2,r3,r4 = st.columns(4)
-    r1.metric("T-statistic",  f"{t_stat:.4f}")
-    r2.metric("P-value",      f"{p_val:.4f}")
-    r3.metric(f"IC 95% {p1}", f"[{ci1[0]:,.0f} – {ci1[1]:,.0f}]")
-    r4.metric(f"IC 95% {p2}", f"[{ci2[0]:,.0f} – {ci2[1]:,.0f}]")
+    r1, r2, r3, r4 = st.columns(4)
+    with r1:
+        render_kpi("T-statistic", f"{t_stat:.4f}", "activity", "Force de l'écart")
+    with r2:
+        render_kpi("P-value", f"{p_val:.4f}", "platforms", "Seuil de décision")
+    with r3:
+        render_kpi(f"IC 95% {p1}", f"[{ci1[0]:,.0f} – {ci1[1]:,.0f}] {currency_symbol}", "price", "Intervalle Plateforme A")
+    with r4:
+        render_kpi(f"IC 95% {p2}", f"[{ci2[0]:,.0f} – {ci2[1]:,.0f}] {currency_symbol}", "price", "Intervalle Plateforme B")
 
     if p_val < 0.05:
-        st.markdown(f"<div style='background:#1a2a1a;border:1px solid #2a4a2a;border-radius:8px;padding:12px 16px;color:#4ade80;font-size:13px'>Différence significative (p={p_val:.4f} &lt; 0.05)</div>", unsafe_allow_html=True)
+        render_alert(
+            f"**Différence Statistiquement Significative (p = {p_val:.4f} < 0.05)** : Nous rejetons l'hypothèse nulle (H0). Les prix moyens entre {p1} (m={g1.mean():,.0f} {currency_symbol}) et {p2} (m={g2.mean():,.0f} {currency_symbol}) sont structurellement différents dans notre marché.",
+            type="success", icon="check"
+        )
     else:
-        st.markdown(f"<div style='background:#1a1a2a;border:1px solid #2a2a4a;border-radius:8px;padding:12px 16px;color:#a78bfa;font-size:13px'>Pas de différence significative (p={p_val:.4f} &gt; 0.05)</div>", unsafe_allow_html=True)
+        render_alert(
+            f"**Différence Non Significative (p = {p_val:.4f} >= 0.05)** : Nous ne pouvons pas rejeter l'hypothèse nulle (H0). La différence observée entre {p1} (m={g1.mean():,.0f} {currency_symbol}) et {p2} (m={g2.mean():,.0f} {currency_symbol}) peut s'expliquer par de simples fluctuations aléatoires.",
+            type="warning", icon="alert"
+        )
 
     fig3 = go.Figure()
-    for grp, color, name in [(g1,'#60a5fa',p1),(g2,'#4ade80',p2)]:
-        fig3.add_trace(go.Box(y=grp, name=name, marker_color=color, boxmean=True))
-    fig3.update_layout(**DARK, title="Comparaison des distributions")
-    st.plotly_chart(fig3, use_container_width=True)
+    fig3.add_trace(go.Box(y=g1, name=p1, marker_color=COLOR_CYAN, boxmean=True))
+    fig3.add_trace(go.Box(y=g2, name=p2, marker_color=COLOR_PURPLE, boxmean=True))
+    apply_plotly_theme(fig3)
+    fig3.update_layout(
+        title=f"Comparaison de Distribution des Prix : {p1} vs {p2}",
+        yaxis_title=f"Prix ({currency_symbol})"
+    )
+    st.plotly_chart(fig3, use_container_width=True, theme=None)
 
-st.markdown("### 3. ANOVA — Variation des prix par marque")
+st.markdown("<div style='margin:20px 0'></div>", unsafe_allow_html=True)
+
+# ── 3. ANOVA ────────────────────────────────────────────────
+st.markdown("### 3. Analyse de Variance (ANOVA) — Effet de la Marque")
 groups = [g['price'].dropna().values for _, g in df.groupby('brand') if len(g) > 2]
-if len(groups) >= 2:
+
+if len(groups) < 2:
+    render_alert("Données de marque insuffisantes (au moins 2 marques avec plus de 2 smartphones) pour effectuer l'ANOVA.", type="warning", icon="alert")
+else:
     f_stat, p_anova = stats.f_oneway(*groups)
     a1, a2 = st.columns(2)
-    a1.metric("F-statistic",   f"{f_stat:.4f}")
-    a2.metric("P-value ANOVA", f"{p_anova:.4f}")
+    with a1:
+        render_kpi("F-statistic", f"{f_stat:.4f}", "activity", "Ratio des variances")
+    with a2:
+        render_kpi("P-value ANOVA", f"{p_anova:.4f}", "platforms", "Seuil de décision")
 
     if p_anova < 0.05:
-        st.markdown("<div style='background:#1a2a1a;border:1px solid #2a4a2a;border-radius:8px;padding:12px 16px;color:#4ade80;font-size:13px'>ANOVA significative — Différences de prix entre marques.</div>", unsafe_allow_html=True)
+        render_alert(
+            f"**Effet Marque Significatif (p = {p_anova:.4f} < 0.05)** : La marque a un impact statistiquement significatif sur le prix des smartphones. Les moyennes des prix diffèrent d'une marque à l'autre.",
+            type="success", icon="check"
+        )
     else:
-        st.markdown("<div style='background:#1a1a2a;border:1px solid #2a2a4a;border-radius:8px;padding:12px 16px;color:#a78bfa;font-size:13px'>ANOVA non significative.</div>", unsafe_allow_html=True)
+        render_alert(
+            f"**Effet Marque Non Significatif (p = {p_anova:.4f} >= 0.05)** : Les prix moyens des smartphones ne présentent pas de variations significatives selon les marques collectées.",
+            type="warning", icon="alert"
+        )
 
-    avg_brand = df.groupby('brand')['price'].mean().reset_index().sort_values('price',ascending=False)
-    fig4 = px.bar(avg_brand, x='brand', y='price', color='brand',
-                  color_discrete_sequence=COLORS, title="Prix moyen par marque")
-    fig4.update_layout(**DARK, showlegend=False)
-    st.plotly_chart(fig4, use_container_width=True)
+    avg_brand = df.groupby('brand')['price'].mean().reset_index().sort_values('price', ascending=False)
+    fig4 = px.bar(
+        avg_brand,
+        x='brand',
+        y='price',
+        color='brand',
+        color_discrete_sequence=[COLOR_CYAN, COLOR_PURPLE, COLOR_AMBER, COLOR_GREEN, COLOR_RED],
+        title="Prix Moyen par Marque"
+    )
+    apply_plotly_theme(fig4)
+    fig4.update_layout(
+        showlegend=False,
+        yaxis_title=f"Prix Moyen ({currency_symbol})",
+        xaxis_title="Marque"
+    )
+    st.plotly_chart(fig4, use_container_width=True, theme=None)
 
-st.markdown("### 4. Intervalles de confiance (95%)")
+st.markdown("<div style='margin:20px 0'></div>", unsafe_allow_html=True)
+
+# ── 4. Confidence Intervals ─────────────────────────────────
+st.markdown("### 4. Intervalles de Confiance à 95% par Plateforme")
 ci_data = []
 for platform, grp in df.groupby('platform'):
     prices = grp['price'].dropna()
     if len(prices) > 1:
         ci = stats.t.interval(0.95, len(prices)-1, loc=prices.mean(), scale=stats.sem(prices))
-        ci_data.append({'Plateforme': platform, 'Moyenne': prices.mean(), 'IC_bas': ci[0], 'IC_haut': ci[1]})
+        ci_data.append({
+            'Plateforme': platform,
+            'Moyenne': prices.mean(),
+            'IC_bas': ci[0],
+            'IC_haut': ci[1]
+        })
 
-if ci_data:
+if not ci_data:
+    render_alert("Aucun intervalle de confiance disponible (données insuffisantes par plateforme).", type="warning", icon="alert")
+else:
     ci_df = pd.DataFrame(ci_data)
     fig5 = go.Figure()
+    colors_list = [COLOR_CYAN, COLOR_PURPLE, COLOR_AMBER, COLOR_GREEN]
     for i, row in ci_df.iterrows():
+        color = colors_list[i % len(colors_list)]
         fig5.add_trace(go.Scatter(
             x=[row['IC_bas'], row['Moyenne'], row['IC_haut']],
             y=[row['Plateforme']]*3,
             mode='lines+markers',
             name=row['Plateforme'],
-            marker=dict(size=[8,14,8], color=COLORS[i]),
-            line=dict(color=COLORS[i], width=2)
+            marker=dict(size=[8, 14, 8], color=color),
+            line=dict(color=color, width=2)
         ))
-    fig5.update_layout(**DARK, title="Intervalles de confiance à 95%",
-                       xaxis_title="Prix (€)", yaxis_title="")
-    st.plotly_chart(fig5, use_container_width=True)
-    st.markdown("### 5. Régression linéaire — price ~ brand + platform")
+    apply_plotly_theme(fig5)
+    fig5.update_layout(
+        title="Estimation de la Moyenne Vraie & Intervalle de Confiance à 95%",
+        xaxis_title=f"Prix ({currency_symbol})",
+        yaxis_title="",
+        showlegend=False
+    )
+    st.plotly_chart(fig5, use_container_width=True, theme=None)
 
-import statsmodels.api as sm
+st.markdown("<div style='margin:20px 0'></div>", unsafe_allow_html=True)
+
+# ── 5. Linear Regression ────────────────────────────────────
+st.markdown("### 5. Régression Linéaire Multi-factorielle (OLS)")
+st.markdown("<p style='color:#475569; font-size:13px; margin-bottom:15px;'>Modèle explicatif : <code>prix ~ marque + plateforme</code>. Ce modèle évalue la contribution de chaque facteur sur le prix final.</p>", unsafe_allow_html=True)
 
 reg_df = df.copy()
+# Drop categories with less than 2 entries to avoid singularity
+reg_df = reg_df.dropna(subset=['price', 'brand', 'platform'])
 reg_df['brand_code'] = pd.Categorical(reg_df['brand']).codes
 reg_df['platform_code'] = pd.Categorical(reg_df['platform']).codes
-reg_df = reg_df[['price','brand_code','platform_code']].dropna()
 
-if len(reg_df) > 10:
-    X = sm.add_constant(reg_df[['brand_code','platform_code']])
+if len(reg_df) < 15:
+    render_alert("Données insuffisantes pour ajuster un modèle linéaire OLS.", type="warning", icon="alert")
+else:
+    # Build categorical model with statsmodels
+    # We will use dummy variables for brand and platform to make it interpretable
+    X = pd.get_dummies(reg_df[['brand', 'platform']], drop_first=True, dtype=float)
+    X = sm.add_constant(X)
     y = reg_df['price']
+    
     model = sm.OLS(y, X).fit()
 
     r1, r2, r3 = st.columns(3)
-    r1.metric("R²",          f"{model.rsquared:.4f}")
-    r2.metric("F-statistic", f"{model.fvalue:.4f}")
-    r3.metric("P-value",     f"{model.f_pvalue:.4f}")
+    with r1:
+        render_kpi("Coefficient R²", f"{model.rsquared:.4f}", "layers", "Pouvoir explicatif du modèle")
+    with r2:
+        render_kpi("Statistique F", f"{model.fvalue:.4f}", "activity", "Importance globale des facteurs")
+    with r3:
+        render_kpi("P-value OLS", f"{model.f_pvalue:.4e}", "platforms", "Significativité globale")
 
-    if model.rsquared > 0.5:
-        st.markdown("<div style='background:#1a2a1a;border:1px solid #2a4a2a;border-radius:8px;padding:12px 16px;color:#4ade80;font-size:13px'>Modèle significatif — la marque et la plateforme expliquent bien les variations de prix.</div>", unsafe_allow_html=True)
+    if model.rsquared > 0.4:
+        render_alert(
+            f"**Modèle Fortement Significatif (R² = {model.rsquared:.2%})** : La marque et la plateforme expliquent une proportion importante ({model.rsquared:.1%}) de la variation du prix des smartphones dans notre jeu de données.",
+            type="success", icon="check"
+        )
     else:
-        st.markdown("<div style='background:#1a1a2a;border:1px solid #2a2a4a;border-radius:8px;padding:12px 16px;color:#a78bfa;font-size:13px'>Modèle partiel — d'autres facteurs influencent les prix.</div>", unsafe_allow_html=True)
+        render_alert(
+            f"**Modèle Modéré (R² = {model.rsquared:.2%})** : Les facteurs de marque et de canal expliquent partiellement les prix. D'autres variables non observées (spécifications techniques, stockage, mémoire RAM, état du produit) influencent fortement le prix final.",
+            type="info", icon="activity"
+        )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("<p style='color:#60a5fa;font-size:11px;text-transform:uppercase;letter-spacing:.5px'>Résumé du modèle</p>", unsafe_allow_html=True)
-        st.text(model.summary().as_text())
-    with col2:
-        fig = px.scatter(reg_df, x='brand_code', y='price',
-                        trendline='ols',
-                        color_discrete_sequence=['#60a5fa'],
-                        title="Price vs Brand")
-        fig.update_layout(**DARK)
-        st.plotly_chart(fig, use_container_width=True)
+    # Coef detailed table formatting
+    st.markdown("#### Table des Coefficients Estimés")
+    
+    # Extract params and convert to dataframe
+    summary_data = {
+        "Facteurs & Catégories": model.params.index,
+        "Coefficient (Impact)": model.params.values,
+        "Erreur Standard": model.bse.values,
+        "Valeur t": model.tvalues.values,
+        "Probabilité P>|t|": model.pvalues.values
+    }
+    summary_df = pd.DataFrame(summary_data)
+    
+    # Beautify index labels
+    summary_df['Facteurs & Catégories'] = summary_df['Facteurs & Catégories'].str.replace('brand_', 'Marque: ').str.replace('platform_', 'Plateforme: ').str.replace('const', 'Constante (Prix de base)')
+    
+    st.dataframe(
+        summary_df,
+        column_config={
+            "Facteurs & Catégories": st.column_config.TextColumn("Facteurs explicatifs"),
+            "Coefficient (Impact)": st.column_config.NumberColumn(f"Impact sur le prix ({currency_symbol})", format="%.2f"),
+            "Erreur Standard": st.column_config.NumberColumn("Erreur Standard", format="%.2f"),
+            "Valeur t": st.column_config.NumberColumn("Valeur t", format="%.3f"),
+            "Probabilité P>|t|": st.column_config.NumberColumn("P-value individuelle", format="%.4e")
+        },
+        use_container_width=True,
+        hide_index=True
+    )
 
-        
+    col_reg1, col_reg2 = st.columns(2)
+    with col_reg1:
+        with st.expander("Résumé OLS Détaillé (Texte brut)"):
+            st.text(model.summary().as_text())
+            
+    with col_reg2:
+        fig_scatter = px.scatter(
+            reg_df,
+            x='brand',
+            y='price',
+            color='platform',
+            color_discrete_sequence=[COLOR_CYAN, COLOR_PURPLE, COLOR_AMBER, COLOR_GREEN],
+            title="Dispersion des Prix par Marque & Canal"
+        )
+        apply_plotly_theme(fig_scatter)
+        fig_scatter.update_layout(
+            yaxis_title=f"Prix ({currency_symbol})",
+            xaxis_title="Marque"
+        )
+        st.plotly_chart(fig_scatter, use_container_width=True, theme=None)

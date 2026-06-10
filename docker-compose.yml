@@ -6,7 +6,10 @@ services:
     container_name: price-intelligence-app
     ports:
       - "8501:8501"
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
     volumes:
       - ./frontend:/app/frontend
       - ./backend:/app/backend
       - ./data:/app/data
+      - ./gcp-credentials.json:/app/gcp-credentials.json
